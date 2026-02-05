@@ -66,7 +66,7 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         self._attr_unique_id = f"{entry.entry_id}-{description.key}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.data[CONF_APID])},
-            manufacturer="Fuzhou Public Water",
+            manufacturer="抚州公用水务有限公司",
             name="Fuzhou Public Water",
         )
 
