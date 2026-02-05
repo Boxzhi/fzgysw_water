@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "抚州公用水务",
+        "description": "请填写微信公众号接口中的 apid 参数，可选填写水表账号 (yhbh)。",
+        "data": {
+          "apid": "APID",
+          "account_id": "水表账号 (yhbh)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "需要填写有效的 APID。"
+    }
+  }
+}
