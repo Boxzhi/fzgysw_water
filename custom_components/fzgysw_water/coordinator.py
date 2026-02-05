@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+import base64
 import json
 import logging
 from typing import Any
@@ -51,10 +52,11 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
 
     async def _async_update_data(self) -> FzgyswWaterData:
         """Fetch data from the API endpoints."""
-        apid = self._normalize_apid(self._entry.data[CONF_APID])
+        apid_input = self._entry.data[CONF_APID]
+        apid_raw, apid_encoded = self._derive_apid_pair(apid_input)
         account_id = self._entry.data.get(CONF_ACCOUNT_ID)
         try:
-            account_info = await self._fetch_account_info(apid)
+            account_info = await self._fetch_account_info(apid_encoded, apid_raw)
             if not account_info:
                 raise UpdateFailed("No account data returned")
             account = account_info[0]
@@ -69,21 +71,32 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             bills = []
             if account_id:
                 start, end = self._compute_month_range()
-                bills = await self._fetch_bills(apid, account_id, start, end)
+                bills = await self._fetch_bills(
+                    apid_raw, apid_encoded, account_id, start, end
+                )
 
             return FzgyswWaterData(account=account, bills=bills)
         except (ClientResponseError, ValueError, json.JSONDecodeError) as err:
             raise UpdateFailed(f"API error: {err}") from err
 
-    async def _fetch_account_info(self, apid: str) -> list[dict[str, Any]]:
+    async def _fetch_account_info(
+        self, apid_encoded: str, apid_raw: str
+    ) -> list[dict[str, Any]]:
         """Fetch account info from the API."""
         url = f"{BASE_URL}/{ACCOUNT_ENDPOINT}"
         params = {
-            "apid": apid,
+            "apid": apid_encoded,
             "Search": "TGlzdA==",
         }
         async with self._session.get(
-            url, params=params, headers=self._build_headers()
+            url,
+            params=params,
+            headers=self._build_headers(
+                referer=(
+                    "http://www.fzgysw.cn/weixincx/mnewmenu/FrmZXJF.aspx"
+                    f"?userid={apid_raw}"
+                )
+            ),
         ) as resp:
             resp.raise_for_status()
             raw = await resp.read()
@@ -91,7 +104,12 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             return self._parse_json_array(text)
 
     async def _fetch_bills(
-        self, apid: str, account_id: str, start: str, end: str
+        self,
+        apid_raw: str,
+        apid_encoded: str,
+        account_id: str,
+        start: str,
+        end: str,
     ) -> list[dict[str, Any]]:
         """Fetch bill data from the API."""
         url = f"{BASE_URL}/{BILL_ENDPOINT}"
@@ -100,10 +118,18 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             "txtStart": start,
             "txtEnd": end,
             "Search": "Select",
-            "apid": apid,
+            "apid": apid_raw,
         }
         async with self._session.post(
-            url, params=params, headers=self._build_headers()
+            url,
+            params=params,
+            headers=self._build_headers(
+                referer=(
+                    "http://www.fzgysw.cn/weixincx/mnewmenu/FrmYscxMX.aspx"
+                    f"?YHBH={account_id}&txtStart={start}&txtEnd={end}&apid={apid_encoded}"
+                ),
+                origin="http://www.fzgysw.cn",
+            ),
         ) as resp:
             resp.raise_for_status()
             payload = await resp.json(content_type=None)
@@ -135,13 +161,24 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
         text: str, log_context: str = "account"
     ) -> list[dict[str, Any]]:
         """Parse a JSON array from raw text, tolerating wrapped content."""
-        cleaned = text.strip()
+        cleaned = text.lstrip("\ufeff").strip()
         if not cleaned:
             return []
 
         if cleaned.startswith("<"):
             _LOGGER.warning("Received HTML response for %s payload", log_context)
             return []
+
+        if cleaned.startswith("{") and cleaned.endswith("}"):
+            try:
+                payload = json.loads(cleaned)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict):
+                nested = payload.get("Data")
+                if isinstance(nested, str):
+                    return self._parse_json_array(nested, log_context=log_context)
+                return []
 
         if cleaned.startswith("[") and cleaned.endswith("]"):
             return json.loads(cleaned)
@@ -155,20 +192,27 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
         raise ValueError(f"Unexpected {log_context} payload: {cleaned[:80]}")
 
     @staticmethod
-    def _normalize_apid(apid: str) -> str:
-        """Ensure APID padding so it stays valid base64 when required."""
-        apid = apid.strip()
-        remainder = len(apid) % 4
-        if remainder:
-            apid += "=" * (4 - remainder)
-        return apid
+    def _derive_apid_pair(apid_input: str) -> tuple[str, str]:
+        """Return raw APID and base64-encoded APID for API calls."""
+        apid_input = apid_input.strip()
+        try:
+            padded = apid_input + "=" * (-len(apid_input) % 4)
+            decoded = base64.b64decode(padded.encode(), validate=False)
+            apid_raw = decoded.decode("utf-8")
+            if not apid_raw:
+                raise ValueError("empty decode")
+        except (ValueError, UnicodeDecodeError):
+            apid_raw = apid_input
+
+        apid_encoded = base64.b64encode(apid_raw.encode("utf-8")).decode("utf-8")
+        return apid_raw, apid_encoded
 
     @staticmethod
-    def _build_headers() -> dict[str, str]:
+    def _build_headers(referer: str, origin: str | None = None) -> dict[str, str]:
         """Build request headers to match the expected WeChat flow."""
-        return {
+        headers = {
             "Accept": "*/*",
-            "Referer": "http://www.fzgysw.cn/weixincx/mnewmenu/",
+            "Referer": referer,
             "User-Agent": (
                 "Mozilla/5.0 (iPhone; CPU iPhone OS 15_4_1 like Mac OS X) "
                 "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 "
@@ -176,3 +220,6 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             ),
             "X-Requested-With": "XMLHttpRequest",
         }
+        if origin:
+            headers["Origin"] = origin
+        return headers
