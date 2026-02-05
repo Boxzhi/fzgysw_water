@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Fuzhou Public Water",
+        "title": "Fuzhou Water",
         "description": "Provide the APID value from the official WeChat flow and optionally a specific account ID.",
         "data": {
           "apid": "APID",

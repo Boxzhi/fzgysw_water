@@ -1,6 +1,6 @@
 {
   "domain": "fzgysw_water",
-  "name": "Fuzhou Public Water",
+  "name": "Fuzhou Water",
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://example.com/fzgysw_water",

@@ -51,7 +51,7 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
 
     async def _async_update_data(self) -> FzgyswWaterData:
         """Fetch data from the API endpoints."""
-        apid = self._entry.data[CONF_APID]
+        apid = self._normalize_apid(self._entry.data[CONF_APID])
         account_id = self._entry.data.get(CONF_ACCOUNT_ID)
         try:
             account_info = await self._fetch_account_info(apid)
@@ -82,7 +82,9 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             "apid": apid,
             "Search": "TGlzdA==",
         }
-        async with self._session.get(url, params=params) as resp:
+        async with self._session.get(
+            url, params=params, headers=self._build_headers()
+        ) as resp:
             resp.raise_for_status()
             raw = await resp.read()
             text = raw.decode("gb2312", errors="ignore")
@@ -100,7 +102,9 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             "Search": "Select",
             "apid": apid,
         }
-        async with self._session.post(url, params=params) as resp:
+        async with self._session.post(
+            url, params=params, headers=self._build_headers()
+        ) as resp:
             resp.raise_for_status()
             payload = await resp.json(content_type=None)
 
@@ -129,3 +133,26 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
                 year -= 1
         start = f"{year}{month:02d}"
         return start, end
+
+    @staticmethod
+    def _normalize_apid(apid: str) -> str:
+        """Ensure APID padding so it stays valid base64 when required."""
+        apid = apid.strip()
+        remainder = len(apid) % 4
+        if remainder:
+            apid += "=" * (4 - remainder)
+        return apid
+
+    @staticmethod
+    def _build_headers() -> dict[str, str]:
+        """Build request headers to match the expected WeChat flow."""
+        return {
+            "Accept": "*/*",
+            "Referer": "http://www.fzgysw.cn/weixincx/mnewmenu/",
+            "User-Agent": (
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_4_1 like Mac OS X) "
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 "
+                "MicroMessenger/8.0.68(0x18004431) NetType/4G Language/zh_CN"
+            ),
+            "X-Requested-With": "XMLHttpRequest",
+        }
