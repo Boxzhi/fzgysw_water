@@ -86,7 +86,6 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
             return "未知用户"
         return f"*{name[1:]}" if len(name) > 1 else "*"
 
-
 class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
     """Sensor for water account balance."""
 
