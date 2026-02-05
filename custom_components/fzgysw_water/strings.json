@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Fuzhou Water",
+        "description": "Provide the APID value from the official WeChat flow and optionally a specific account ID.",
+        "data": {
+          "apid": "APID",
+          "account_id": "Account ID (yhbh)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "APID is required."
+    }
+  }
+}
