@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "抚州公用水务",
+        "description": "Provide the APID value from the official WeChat flow and optionally a specific account ID.",
+        "data": {
+          "apid": "APID",
+          "account_id": "Account ID (yhbh)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "APID is required."
+    }
+  }
+}
