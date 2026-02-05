@@ -64,10 +64,21 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{entry.entry_id}-{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.data[CONF_APID])},
-            manufacturer="抚州公用水务有限公司",
-            name="Fuzhou Public Water",
+        self._entry = entry
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info for the water account."""
+        account = self.coordinator.data.account if self.coordinator.data else {}
+        account_name = account.get("yhmc") or "未知用户"
+        account_id = account.get("yhbh") or "未知户号"
+        address = account.get("yhdz") or "抚州公用水务"
+
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.data[CONF_APID])},
+            manufacturer=f"户号：{account_name}",
+            model=account_id,
+            name=address,
         )
 
 

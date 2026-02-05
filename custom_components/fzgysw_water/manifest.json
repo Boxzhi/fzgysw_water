@@ -1,10 +1,10 @@
 {
   "domain": "fzgysw_water",
-  "name": "Fuzhou Water",
+  "name": "抚州公用水务",
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://example.com/fzgysw_water",
   "iot_class": "cloud_polling",
   "requirements": [],
-  "version": "0.1.2"
+  "version": "0.1.3"
 }
