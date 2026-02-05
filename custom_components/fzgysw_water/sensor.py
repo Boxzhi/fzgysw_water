@@ -78,7 +78,8 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
             identifiers={(DOMAIN, self._entry.data[CONF_APID])},
             manufacturer="抚州公用水务有限公司",
             name=address,
-            model=f"户名：{account_name} - {account_id}",
+            model=f"户名：{account_name}",
+            # model=f"户名：{account_name} - {account_id}",
         )
 
     @staticmethod
