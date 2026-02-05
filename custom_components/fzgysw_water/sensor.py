@@ -70,17 +70,21 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
     def device_info(self) -> DeviceInfo:
         """Return device info for the water account."""
         account = self.coordinator.data.account if self.coordinator.data else {}
-        account_name = account.get("yhmc") or "未知用户"
+        account_name = self._mask_account_name(account.get("yhmc"))
         account_id = account.get("yhbh") or "未知户号"
-        address = account.get("yhdz") or "抚州公用水务"
 
         return DeviceInfo(
             identifiers={(DOMAIN, self._entry.data[CONF_APID])},
-            manufacturer=f"户号：{account_name}",
-            model=account_id,
-            name=address,
+            manufacturer="抚州公用水务有限公司",
+            name=f"户号：{account_name} - {account_id}",
         )
 
+    @staticmethod
+    def _mask_account_name(name: str | None) -> str:
+        """Mask the first character of the account name."""
+        if not name:
+            return "未知用户"
+        return f"*{name[1:]}" if len(name) > 1 else "*"
 
 class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
     """Sensor for water account balance."""
