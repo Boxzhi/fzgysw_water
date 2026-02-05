@@ -88,7 +88,7 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             resp.raise_for_status()
             raw = await resp.read()
             text = raw.decode("gb2312", errors="ignore")
-            return json.loads(text)
+            return self._parse_json_array(text)
 
     async def _fetch_bills(
         self, apid: str, account_id: str, start: str, end: str
@@ -112,11 +112,7 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             return []
 
         data = payload.get("Data") or "[]"
-        try:
-            return json.loads(data)
-        except json.JSONDecodeError:
-            _LOGGER.warning("Unable to decode bill data payload")
-            return []
+        return self._parse_json_array(data, log_context="bill")
 
     @staticmethod
     def _compute_month_range(today: date | None = None) -> tuple[str, str]:
@@ -133,6 +129,30 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
                 year -= 1
         start = f"{year}{month:02d}"
         return start, end
+
+    @staticmethod
+    def _parse_json_array(
+        text: str, log_context: str = "account"
+    ) -> list[dict[str, Any]]:
+        """Parse a JSON array from raw text, tolerating wrapped content."""
+        cleaned = text.strip()
+        if not cleaned:
+            return []
+
+        if cleaned.startswith("<"):
+            _LOGGER.warning("Received HTML response for %s payload", log_context)
+            return []
+
+        if cleaned.startswith("[") and cleaned.endswith("]"):
+            return json.loads(cleaned)
+
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            snippet = cleaned[start : end + 1]
+            return json.loads(snippet)
+
+        raise ValueError(f"Unexpected {log_context} payload: {cleaned[:80]}")
 
     @staticmethod
     def _normalize_apid(apid: str) -> str:
