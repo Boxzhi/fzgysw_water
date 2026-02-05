@@ -1,6 +1,7 @@
 """Constants for the Fuzhou Public Water integration."""
 
 DOMAIN = "fzgysw_water"
+
 DEFAULT_NAME = "Fuzhou Water"
 
 CONF_APID = "apid"
