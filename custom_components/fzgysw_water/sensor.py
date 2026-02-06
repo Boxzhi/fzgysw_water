@@ -129,7 +129,8 @@ class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
         account = self.coordinator.data.account if self.coordinator.data else None
         if not account:
             return None
-        return {
+
+        attrs = {
             "account_id": account.get("yhbh"),
             "account_name": account.get("yhmc"),
             "address": account.get("yhdz"),
@@ -138,8 +139,12 @@ class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
             "current_balance": account.get("xyyc"),
             "arrears": account.get("yjje"),
             "amount_due": account.get("fkje"),
-            "last_update": self.coordinator.last_update_success_time,
         }
+        last = self.coordinator.last_update_success_time
+        if last:
+            attrs["last_update"] = last
+
+        return attrs
 
 # =========================================================
 # 账单
