@@ -53,7 +53,7 @@ async def async_setup_entry(
 class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], SensorEntity):
     """Base sensor for Fzgysw Water."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
 
     def __init__(
         self,
@@ -68,7 +68,10 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         unique_suffix = account_id or entry.entry_id
         self._attr_unique_id = f"{unique_suffix}-{description.key}"
         base_name = f"Fuzhou Water {account_id}" if account_id else "Fuzhou Water"
-        self._attr_name = f"{base_name} {description.name}"
+        if description.key == "account":
+            self._attr_name = f"{base_name} Balance"
+        else:
+            self._attr_name = f"{base_name} Bill"
         self._entry = entry
 
     @property
