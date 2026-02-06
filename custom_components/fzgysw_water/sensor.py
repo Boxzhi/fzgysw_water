@@ -79,9 +79,13 @@ class FzgyswWaterBaseSensor(CoordinatorEntity, SensorEntity):
 
         self.entity_id = f"sensor.fuzhou_water_{unique_suffix}_{description.key}"
 
-        # UI名称
-        self._attr_name = description.name
-
+        # 实体信息
+        base_name = f"抚州公用水务{account_id}" if account_id else "抚州公用水务"
+        if description.key == "balance":
+            self._attr_name = f"{base_name}{description.name}"
+        else:
+            self._attr_name = f"{base_name}{description.name}"
+            
     # -----------------------------------------------------
     # 设备信息
     # -----------------------------------------------------
