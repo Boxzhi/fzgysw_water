@@ -63,7 +63,12 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{entry.entry_id}-{description.key}"
+        account = coordinator.data.account if coordinator.data else {}
+        account_id = account.get("yhbh") if account else None
+        unique_suffix = account_id or entry.entry_id
+        self._attr_unique_id = f"{unique_suffix}-{description.key}"
+        base_name = f"Fuzhou Water {account_id}" if account_id else "Fuzhou Water"
+        self._attr_name = f"{base_name} {description.name}"
         self._entry = entry
 
     @property
