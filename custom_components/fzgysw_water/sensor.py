@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_APID, DOMAIN
 from .coordinator import FzgyswWaterDataCoordinator
@@ -22,7 +23,7 @@ class FzgyswWaterSensorEntityDescription(SensorEntityDescription):
 
 
 ACCOUNT_DESCRIPTION = FzgyswWaterSensorEntityDescription(
-    key="account",
+    key="balance",
     name="余额",
     icon="mdi:water",
 )
@@ -37,7 +38,7 @@ BILL_DESCRIPTION = FzgyswWaterSensorEntityDescription(
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: callable,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up sensors from config entry."""
     coordinator: FzgyswWaterDataCoordinator = hass.data[DOMAIN][entry.entry_id]
@@ -51,7 +52,8 @@ async def async_setup_entry(
 
 class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], SensorEntity):
     """Base sensor for Fzgysw Water."""
-    _attr_has_entity_name = False
+
+    _attr_has_entity_name = False  # 使用自定义 entity_id，不参与自动命名
 
     def __init__(
         self,
@@ -60,17 +62,25 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         description: FzgyswWaterSensorEntityDescription,
     ) -> None:
         super().__init__(coordinator)
+
         self.entity_description = description
-        account = coordinator.data.account if coordinator.data else {}
-        account_id = account.get("yhbh") if account else None
-        unique_suffix = account_id or entry.entry_id
-        self._attr_unique_id = f"{unique_suffix}-{description.key}"
-        base_name = f"抚州公用水务{account_id}" if account_id else "抚州公用水务"
-        if description.key == "account":
-            self._attr_name = f"{base_name}余额"
-        else:
-            self._attr_name = f"{base_name}账单"
         self._entry = entry
+
+        account = coordinator.data.account if coordinator.data else {}
+        account_id = account.get("yhbh")
+
+        unique_suffix = account_id or entry.entry_id
+
+        # 唯一ID
+        self._attr_unique_id = f"{DOMAIN}-{unique_suffix}-{description.key}"
+
+        # ⭐⭐⭐ 关键：直接固定 entity_id
+        self._attr_entity_id = (
+            f"sensor.fuzhou_water_{unique_suffix}_{description.key}"
+        )
+
+        # 显示名称（UI用）
+        self._attr_name = description.name
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -97,6 +107,7 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
 
 class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
     """Sensor for water account balance."""
+
     @property
     def native_value(self) -> str | None:
         account = self.coordinator.data.account if self.coordinator.data else None
@@ -123,6 +134,7 @@ class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
 
 class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
     """Sensor for latest water bill."""
+
     @property
     def native_value(self) -> str | None:
         bill = self._latest_bill()
@@ -150,6 +162,7 @@ class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
             "payment_date": bill.get("SFRQ"),
             "recent_bills": bills,
         }
+
     def _latest_bill(self) -> dict[str, Any] | None:
         bills = self.coordinator.data.bills if self.coordinator.data else []
         if not bills:
