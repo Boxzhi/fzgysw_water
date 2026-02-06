@@ -138,6 +138,7 @@ class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
             "current_balance": account.get("xyyc"),
             "arrears": account.get("yjje"),
             "amount_due": account.get("fkje"),
+            "last_update": self.coordinator.last_update_success_time,
         }
 
 # =========================================================
