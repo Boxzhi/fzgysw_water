@@ -18,7 +18,6 @@ from .coordinator import FzgyswWaterDataCoordinator
 
 @dataclass(frozen=True, kw_only=True)
 class FzgyswWaterSensorEntityDescription(SensorEntityDescription):
-    """Description for Fzgysw Water sensor."""
     key: str
 
 
@@ -40,8 +39,8 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up sensors from config entry."""
     coordinator: FzgyswWaterDataCoordinator = hass.data[DOMAIN][entry.entry_id]
+
     async_add_entities(
         [
             FzgyswWaterAccountSensor(coordinator, entry, ACCOUNT_DESCRIPTION),
@@ -50,10 +49,12 @@ async def async_setup_entry(
     )
 
 
-class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], SensorEntity):
-    """Base sensor for Fzgysw Water."""
+# =========================================================
+# Base
+# =========================================================
+class FzgyswWaterBaseSensor(CoordinatorEntity, SensorEntity):
 
-    _attr_has_entity_name = False  # 使用自定义 entity_id，不参与自动命名
+    _attr_has_entity_name = False
 
     def __init__(
         self,
@@ -71,21 +72,23 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
 
         unique_suffix = account_id or entry.entry_id
 
-        # 唯一ID
-        self._attr_unique_id = f"{DOMAIN}-{unique_suffix}-{description.key}"
+        # -------------------------
+        # 唯一ID（必须）
+        # -------------------------
+        self._attr_unique_id = f"{DOMAIN}_{unique_suffix}_{description.key}"
 
-        # ⭐⭐⭐ 关键：直接固定 entity_id
-        self._attr_entity_id = (
-            f"sensor.fuzhou_water_{unique_suffix}_{description.key}"
-        )
+        self.entity_id = f"sensor.fuzhou_water_{unique_suffix}_{description.key}"
 
-        # 显示名称（UI用）
+        # UI名称
         self._attr_name = description.name
 
+    # -----------------------------------------------------
+    # 设备信息
+    # -----------------------------------------------------
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device info for the water account."""
         account = self.coordinator.data.account if self.coordinator.data else {}
+
         account_name = self._mask_account_name(account.get("yhmc"))
         account_id = account.get("yhbh") or "未知户号"
         address = account.get("yhdz") or "抚州公用水务"
@@ -99,72 +102,28 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
 
     @staticmethod
     def _mask_account_name(name: str | None) -> str:
-        """Mask the first character of the account name."""
         if not name:
             return "未知用户"
         return f"*{name[1:]}" if len(name) > 1 else "*"
 
 
+# =========================================================
+# 余额
+# =========================================================
 class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
-    """Sensor for water account balance."""
 
     @property
     def native_value(self) -> str | None:
         account = self.coordinator.data.account if self.coordinator.data else None
-        if not account:
-            return None
-        return account.get("xyyc")
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        account = self.coordinator.data.account if self.coordinator.data else None
-        if not account:
-            return None
-        return {
-            "account_id": account.get("yhbh"),
-            "account_name": account.get("yhmc"),
-            "address": account.get("yhdz"),
-            "total_due": account.get("zjje"),
-            "total_paid": account.get("zlje"),
-            "current_balance": account.get("xyyc"),
-            "arrears": account.get("yjje"),
-            "amount_due": account.get("fkje"),
-        }
+        return account.get("xyyc") if account else None
 
 
+# =========================================================
+# 账单
+# =========================================================
 class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
-    """Sensor for latest water bill."""
 
     @property
     def native_value(self) -> str | None:
-        bill = self._latest_bill()
-        if not bill:
-            return None
-        return bill.get("YSJE")
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        bills = self.coordinator.data.bills if self.coordinator.data else []
-        bill = self._latest_bill()
-        if not bill:
-            return None
-        return {
-            "billing_month": bill.get("CBNY"),
-            "read_date": bill.get("CBRQ"),
-            "start_meter": bill.get("SYBS"),
-            "end_meter": bill.get("BYBS"),
-            "usage": bill.get("FBYSL"),
-            "charge": bill.get("ZJJE"),
-            "amount_due": bill.get("YSJE"),
-            "late_fee": bill.get("WYJ"),
-            "surcharge": bill.get("WSJE"),
-            "payment_status": bill.get("SFZT"),
-            "payment_date": bill.get("SFRQ"),
-            "recent_bills": bills,
-        }
-
-    def _latest_bill(self) -> dict[str, Any] | None:
-        bills = self.coordinator.data.bills if self.coordinator.data else []
-        if not bills:
-            return None
-        return max(bills, key=lambda item: item.get("CBNY", ""))
+        account = self.coordinator.data.account if self.coordinator.data else None
+        return account.get("zjje") if account else None
