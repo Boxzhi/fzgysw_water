@@ -23,14 +23,14 @@ class FzgyswWaterSensorEntityDescription(SensorEntityDescription):
 
 
 ACCOUNT_DESCRIPTION = FzgyswWaterSensorEntityDescription(
-    key="account",
-    name="Water Balance",
+    key="balance",
+    name="余额",
     icon="mdi:water",
 )
 
 BILL_DESCRIPTION = FzgyswWaterSensorEntityDescription(
     key="bill",
-    name="Latest Water Bill",
+    name="账单",
     icon="mdi:receipt",
 )
 
@@ -42,6 +42,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up sensors from config entry."""
     coordinator: FzgyswWaterDataCoordinator = hass.data[DOMAIN][entry.entry_id]
+
     async_add_entities(
         [
             FzgyswWaterAccountSensor(coordinator, entry, ACCOUNT_DESCRIPTION),
@@ -50,7 +51,9 @@ async def async_setup_entry(
     )
 
 
-class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], SensorEntity):
+class FzgyswWaterBaseSensor(
+    CoordinatorEntity[FzgyswWaterDataCoordinator], SensorEntity
+):
     """Base sensor for Fzgysw Water."""
 
     _attr_has_entity_name = False
@@ -62,24 +65,28 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         description: FzgyswWaterSensorEntityDescription,
     ) -> None:
         super().__init__(coordinator)
+
         self.entity_description = description
-        account = coordinator.data.account if coordinator.data else {}
-        account_id = account.get("yhbh") if account else None
-        unique_suffix = account_id or entry.entry_id
-        self._attr_unique_id = f"{unique_suffix}-{description.key}"
-        base_name = f"Fuzhou Water {account_id}" if account_id else "Fuzhou Water"
-        if description.key == "account":
-            self._attr_name = f"{base_name} Balance"
-        else:
-            self._attr_name = f"{base_name} Bill"
         self._entry = entry
+
+        account = coordinator.data.account if coordinator.data else {}
+        account_id = account.get("yhbh") or entry.entry_id
+
+        # ⭐⭐⭐ 关键修改点（控制 entity_id）
+        self._attr_unique_id = f"fuzhou_water_{account_id}_{description.key}"
+
+        # ⭐⭐⭐ 控制 UI 显示名称
+        if description.key == "balance":
+            self._attr_name = f"抚州公用水务{account_id}余额"
+        else:
+            self._attr_name = f"抚州公用水务{account_id}账单"
 
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info for the water account."""
         account = self.coordinator.data.account if self.coordinator.data else {}
+
         account_name = self._mask_account_name(account.get("yhmc"))
-        account_id = account.get("yhbh") or "未知户号"
         address = account.get("yhdz") or "抚州公用水务"
 
         return DeviceInfo(
@@ -87,7 +94,6 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
             manufacturer="抚州公用水务有限公司",
             name=address,
             model=f"户名：{account_name}",
-            # model=f"户名：{account_name} - {account_id}",
         )
 
     @staticmethod
@@ -96,6 +102,7 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         if not name:
             return "未知用户"
         return f"*{name[1:]}" if len(name) > 1 else "*"
+
 
 class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
     """Sensor for water account balance."""
@@ -112,6 +119,7 @@ class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
         account = self.coordinator.data.account if self.coordinator.data else None
         if not account:
             return None
+
         return {
             "account_id": account.get("yhbh"),
             "account_name": account.get("yhmc"),
@@ -140,6 +148,7 @@ class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
         bill = self._latest_bill()
         if not bill:
             return None
+
         return {
             "billing_month": bill.get("CBNY"),
             "read_date": bill.get("CBRQ"),
