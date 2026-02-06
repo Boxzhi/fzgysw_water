@@ -68,6 +68,7 @@ class FzgyswWaterBaseSensor(
         account = coordinator.data.account if coordinator.data else {}
         account_id = account.get("yhbh") or entry.entry_id
 
+        self.entity_id = f"sensor.fuzhou_water_{account_id}_{description.key}"
         # 设置 unique_id
         self._attr_unique_id = f"fuzhou_water_{account_id}_{description.key}"
 
