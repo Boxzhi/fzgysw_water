@@ -115,19 +115,67 @@ class FzgyswWaterBaseSensor(CoordinatorEntity, SensorEntity):
 # 余额
 # =========================================================
 class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
+    """Sensor for water account balance."""
 
     @property
     def native_value(self) -> str | None:
         account = self.coordinator.data.account if self.coordinator.data else None
-        return account.get("xyyc") if account else None
+        if not account:
+            return None
+        return account.get("xyyc")
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        account = self.coordinator.data.account if self.coordinator.data else None
+        if not account:
+            return None
+        return {
+            "account_id": account.get("yhbh"),
+            "account_name": account.get("yhmc"),
+            "address": account.get("yhdz"),
+            "total_due": account.get("zjje"),
+            "total_paid": account.get("zlje"),
+            "current_balance": account.get("xyyc"),
+            "arrears": account.get("yjje"),
+            "amount_due": account.get("fkje"),
+        }
 
 # =========================================================
 # 账单
 # =========================================================
 class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
+    """Sensor for latest water bill."""
 
     @property
     def native_value(self) -> str | None:
-        account = self.coordinator.data.account if self.coordinator.data else None
-        return account.get("zjje") if account else None
+        bill = self._latest_bill()
+        if not bill:
+            return None
+        return bill.get("YSJE")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        bills = self.coordinator.data.bills if self.coordinator.data else []
+        bill = self._latest_bill()
+        if not bill:
+            return None
+        return {
+            "billing_month": bill.get("CBNY"),
+            "read_date": bill.get("CBRQ"),
+            "start_meter": bill.get("SYBS"),
+            "end_meter": bill.get("BYBS"),
+            "usage": bill.get("FBYSL"),
+            "charge": bill.get("ZJJE"),
+            "amount_due": bill.get("YSJE"),
+            "late_fee": bill.get("WYJ"),
+            "surcharge": bill.get("WSJE"),
+            "payment_status": bill.get("SFZT"),
+            "payment_date": bill.get("SFRQ"),
+            "recent_bills": bills,
+        }
+
+    def _latest_bill(self) -> dict[str, Any] | None:
+        bills = self.coordinator.data.bills if self.coordinator.data else []
+        if not bills:
+            return None
+        return max(bills, key=lambda item: item.get("CBNY", ""))
