@@ -1,9 +1,9 @@
 {
   "domain": "fzgysw_water",
   "name": "抚州公用水务",
-  "codeowners": [],
+  "codeowners": ["Boxzhi"],
   "config_flow": true,
-  "documentation": "https://example.com/fzgysw_water",
+  "documentation": "https://github.com/Boxzhi/fzgysw_water",
   "iot_class": "cloud_polling",
   "requirements": [],
   "version": "0.2.1"
