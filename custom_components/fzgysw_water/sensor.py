@@ -151,7 +151,7 @@ class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
         bill = self._latest_bill()
         if not bill:
             return None
-        return bill.get("YSJE")
+        return bill.get("ZJJE")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
