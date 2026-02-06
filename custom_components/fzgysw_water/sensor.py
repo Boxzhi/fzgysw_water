@@ -18,19 +18,18 @@ from .coordinator import FzgyswWaterDataCoordinator
 @dataclass(frozen=True, kw_only=True)
 class FzgyswWaterSensorEntityDescription(SensorEntityDescription):
     """Description for Fzgysw Water sensor."""
-
     key: str
 
 
 ACCOUNT_DESCRIPTION = FzgyswWaterSensorEntityDescription(
     key="account",
-    name="Water Balance",
+    name="余额",
     icon="mdi:water",
 )
 
 BILL_DESCRIPTION = FzgyswWaterSensorEntityDescription(
     key="bill",
-    name="Latest Water Bill",
+    name="账单",
     icon="mdi:receipt",
 )
 
@@ -52,7 +51,6 @@ async def async_setup_entry(
 
 class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], SensorEntity):
     """Base sensor for Fzgysw Water."""
-
     _attr_has_entity_name = False
 
     def __init__(
@@ -67,7 +65,7 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         account_id = account.get("yhbh") if account else None
         unique_suffix = account_id or entry.entry_id
         self._attr_unique_id = f"{unique_suffix}-{description.key}"
-        base_name = f"抚州自来水{account_id}" if account_id else "抚州自来水"
+        base_name = f"抚州公用水务{account_id}" if account_id else "抚州公用水务"
         if description.key == "account":
             self._attr_name = f"{base_name}余额"
         else:
@@ -85,8 +83,8 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         return DeviceInfo(
             identifiers={(DOMAIN, self._entry.data[CONF_APID])},
             manufacturer="抚州公用水务有限公司",
-            name=f"户号：{account_name} - {account_id}",
-            model=address,
+            name=address,
+            model=f"户名：{account_name}",
         )
 
     @staticmethod
@@ -99,7 +97,6 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
 
 class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
     """Sensor for water account balance."""
-
     @property
     def native_value(self) -> str | None:
         account = self.coordinator.data.account if self.coordinator.data else None
@@ -126,7 +123,6 @@ class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
 
 class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
     """Sensor for latest water bill."""
-
     @property
     def native_value(self) -> str | None:
         bill = self._latest_bill()
@@ -154,7 +150,6 @@ class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
             "payment_date": bill.get("SFRQ"),
             "recent_bills": bills,
         }
-
     def _latest_bill(self) -> dict[str, Any] | None:
         bills = self.coordinator.data.bills if self.coordinator.data else []
         if not bills:
