@@ -82,8 +82,9 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         return DeviceInfo(
             identifiers={(DOMAIN, self._entry.data[CONF_APID])},
             manufacturer="抚州公用水务有限公司",
-            name=f"户号：{account_name} - {account_id}",
-            model=address,
+            name=address,
+            model=f"户名：{account_name}",
+            # model=f"户名：{account_name} - {account_id}",
         )
 
     @staticmethod
@@ -92,7 +93,6 @@ class FzgyswWaterBaseSensor(CoordinatorEntity[FzgyswWaterDataCoordinator], Senso
         if not name:
             return "未知用户"
         return f"*{name[1:]}" if len(name) > 1 else "*"
-
 
 class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
     """Sensor for water account balance."""
