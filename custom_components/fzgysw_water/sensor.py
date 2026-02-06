@@ -77,9 +77,6 @@ class FzgyswWaterBaseSensor(
         else:
             self._attr_name = f"抚州公用水务{account_id}账单"
 
-        # ⭐ 强制设置 entity_id
-        self.entity_id = f"sensor.fuzhou_water_{account_id}_{description.key}"
-
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info for the water account."""
