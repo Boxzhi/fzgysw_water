@@ -25,3 +25,9 @@
 ```jinja2
 {{ state_attr('sensor.fuzhou_water_0000363994_bill', 'last_successful_fetch') }}
 ```
+
+## HACS / Marketplace 安装与更新
+
+在 HACS / Marketplace 中使用 GitHub 仓库链接 `https://github.com/Boxzhi/fzgysw_water` 添加并下载本集成。
+
+从手动安装迁移时，请先备份 `/config/custom_components/fzgysw_water/`，通过 HACS / Marketplace 下载到相同目录；**不要删除「设备与服务」中的现有配置项，也不要重复添加账户**。重启 Home Assistant 后检查原实体和 `last_successful_fetch` 属性。
