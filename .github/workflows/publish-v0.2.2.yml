@@ -1,0 +1,47 @@
+name: Publish v0.2.2 release (one time)
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-v0.2.2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'Boxzhi/fzgysw_water'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish tagged release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.2.2 --repo Boxzhi/fzgysw_water > /dev/null 2>&1; then
+            echo "Release v0.2.2 already exists"
+            exit 0
+          fi
+          cat > /tmp/release-notes.md <<'RELEASE_NOTES'
+          ## v0.2.2 · 抚州公用水务
+          
+          ### 更新内容
+          - 新增 `last_successful_fetch` 属性：账户余额和账单传感器共用最近一次**成功**抓取的 UTC 时间。
+          - 改进账单接口失败处理：`Success=false`、无效数据等不再被误判为空账单；接口失败时保留上次有效数据与时间。
+          - 新增 HACS / Marketplace 配置：仓库根目录 `hacs.json`、`issue_tracker` 及规范的 `codeowners`。
+          - 补充 HACS 安装与从手动安装迁移的说明。
+          
+          ### 兼容性
+          - 保持原有传感器实体 ID、账单属性和 30 分钟数据轮询周期不变。
+          - 已手动安装的用户可以在备份后使用 HACS 管理同一目录；无需删除原有集成配置。
+          
+          ### 升级
+          通过 HACS 下载此版本或将 `custom_components/fzgysw_water` 覆盖至 HA 配置目录，随后重启 Home Assistant。
+          RELEASE_NOTES
+          gh release create v0.2.2 \
+            --repo Boxzhi/fzgysw_water \
+            --target 75e1848f037a1656d97d74c4e66589fdb58040fc \
+            --title "v0.2.2 · 抚州公用水务" \
+            --notes-file /tmp/release-notes.md \
+            --latest
