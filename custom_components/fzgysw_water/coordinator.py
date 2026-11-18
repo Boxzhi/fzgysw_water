@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import base64
 import json
 import logging
 from typing import Any
 
-from aiohttp import ClientResponseError
+from aiohttp import ClientError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -34,6 +34,7 @@ class FzgyswWaterData:
 
     account: dict[str, Any] | None
     bills: list[dict[str, Any]]
+    last_successful_fetch: datetime
 
 
 class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
@@ -68,15 +69,22 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             else:
                 account_id = account.get("yhbh")
 
-            bills = []
-            if account_id:
-                start, end = self._compute_month_range()
-                bills = await self._fetch_bills(
-                    apid_raw, apid_encoded, account_id, start, end
-                )
+            if not account_id:
+                raise UpdateFailed("No water account ID returned")
 
-            return FzgyswWaterData(account=account, bills=bills)
-        except (ClientResponseError, ValueError, json.JSONDecodeError) as err:
+            start, end = self._compute_month_range()
+            bills = await self._fetch_bills(
+                apid_raw, apid_encoded, account_id, start, end
+            )
+
+            # Commit a single timestamp together with the successfully fetched
+            # account and bill snapshot. Failed refreshes retain the old data.
+            return FzgyswWaterData(
+                account=account,
+                bills=bills,
+                last_successful_fetch=datetime.now(timezone.utc),
+            )
+        except (ClientError, TimeoutError, ValueError) as err:
             raise UpdateFailed(f"API error: {err}") from err
 
     async def _fetch_account_info(
@@ -134,11 +142,31 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             resp.raise_for_status()
             payload = await resp.json(content_type=None)
 
-        if not payload.get("Success"):
-            return []
+        if not isinstance(payload, dict):
+            raise UpdateFailed("Invalid bill API response")
 
-        data = payload.get("Data") or "[]"
-        return self._parse_json_array(data, log_context="bill")
+        success = payload.get("Success")
+        if success is not True and success != 1 and str(success).strip().lower() not in ("true", "1"):
+            raise UpdateFailed("Bill API reported failure")
+
+        # A successful request with an empty array is valid: no bills exist.
+        # Missing/malformed data or an HTML login/error page is not a success.
+        if "Data" not in payload:
+            raise UpdateFailed("Bill API response is missing Data")
+        data = payload["Data"]
+        if data is None:
+            return []
+        if isinstance(data, list):
+            bills = data
+        elif isinstance(data, str):
+            if data.lstrip("\ufeff").strip().startswith("<"):
+                raise UpdateFailed("Bill API returned HTML instead of bills")
+            bills = self._parse_json_array(data, log_context="bill")
+        else:
+            raise UpdateFailed("Invalid bill API data format")
+        if any(not isinstance(item, dict) for item in bills):
+            raise UpdateFailed("Invalid bill API record format")
+        return bills
 
     @staticmethod
     def _compute_month_range(today: date | None = None) -> tuple[str, str]:

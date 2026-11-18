@@ -111,6 +111,13 @@ class FzgyswWaterBaseSensor(CoordinatorEntity, SensorEntity):
         return f"*{name[1:]}" if len(name) > 1 else "*"
 
 
+    @property
+    def _last_successful_fetch(self) -> str | None:
+        """UTC ISO 8601 timestamp shared by both sensor entities."""
+        data = self.coordinator.data
+        return data.last_successful_fetch.isoformat() if data else None
+
+
 # =========================================================
 # 余额
 # =========================================================
@@ -131,6 +138,7 @@ class FzgyswWaterAccountSensor(FzgyswWaterBaseSensor):
             return None
 
         return {
+            "last_successful_fetch": self._last_successful_fetch,
             "account_id": account.get("yhbh"),
             "account_name": account.get("yhmc"),
             "address": account.get("yhdz"),
@@ -159,8 +167,9 @@ class FzgyswWaterBillSensor(FzgyswWaterBaseSensor):
         bills = self.coordinator.data.bills if self.coordinator.data else []
         bill = self._latest_bill()
         if not bill:
-            return None
+            return {"last_successful_fetch": self._last_successful_fetch}
         return {
+            "last_successful_fetch": self._last_successful_fetch,
             "billing_month": bill.get("CBNY"),
             "read_date": bill.get("CBRQ"),
             "start_meter": bill.get("SYBS"),
