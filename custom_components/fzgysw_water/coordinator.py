@@ -19,6 +19,7 @@ from .const import (
     ACCOUNT_ENDPOINT,
     BASE_URL,
     BILL_ENDPOINT,
+    BILL_UPDATE_INTERVAL,
     COORDINATOR_UPDATE_INTERVAL,
     CONF_ACCOUNT_ID,
     CONF_APID,
@@ -34,7 +35,8 @@ class FzgyswWaterData:
 
     account: dict[str, Any] | None
     bills: list[dict[str, Any]]
-    last_successful_fetch: datetime
+    account_last_successful_fetch: datetime | None
+    bill_last_successful_fetch: datetime | None
 
 
 class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
@@ -52,40 +54,83 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
         self._session = async_get_clientsession(hass)
 
     async def _async_update_data(self) -> FzgyswWaterData:
-        """Fetch data from the API endpoints."""
+        """Refresh account every six hours, bills every twelve hours."""
         apid_input = self._entry.data[CONF_APID]
         apid_raw, apid_encoded = self._derive_apid_pair(apid_input)
-        account_id = self._entry.data.get(CONF_ACCOUNT_ID)
-        try:
-            account_info = await self._fetch_account_info(apid_encoded, apid_raw)
-            if not account_info:
-                raise UpdateFailed("No account data returned")
-            account = account_info[0]
-            if account_id:
-                account = next(
-                    (item for item in account_info if item.get("yhbh") == account_id),
-                    account,
-                )
-            else:
-                account_id = account.get("yhbh")
+        configured_id = self._entry.data.get(CONF_ACCOUNT_ID)
 
-            if not account_id:
+        previous = self.data
+        account = previous.account if previous else None
+        bills = previous.bills if previous else []
+        account_fetched = previous.account_last_successful_fetch if previous else None
+        bill_fetched = previous.bill_last_successful_fetch if previous else None
+        account_error: Exception | None = None
+
+        try:
+            items = await self._fetch_account_info(apid_encoded, apid_raw)
+            if not isinstance(items, list) or not items or any(not isinstance(item, dict) for item in items):
+                raise UpdateFailed("No valid account data returned")
+            updated_account = items[0]
+            if configured_id:
+                updated_account = next(
+                    (item for item in items if item.get("yhbh") == configured_id),
+                    updated_account,
+                )
+            if not updated_account.get("yhbh"):
                 raise UpdateFailed("No water account ID returned")
 
-            start, end = self._compute_month_range()
-            bills = await self._fetch_bills(
-                apid_raw, apid_encoded, account_id, start, end
+            # Never reuse another account's bill cache.
+            if account and updated_account["yhbh"] != account.get("yhbh"):
+                bills = []
+                bill_fetched = None
+            account = updated_account
+            account_fetched = datetime.now(timezone.utc)
+        except (ClientError, TimeoutError, ValueError, UpdateFailed) as err:
+            account_error = err
+            if not account:
+                raise UpdateFailed("Unable to fetch initial water account data") from err
+            _LOGGER.warning(
+                "Water account refresh failed (%s); retaining cached account",
+                type(err).__name__,
             )
 
-            # Commit a single timestamp together with the successfully fetched
-            # account and bill snapshot. Failed refreshes retain the old data.
-            return FzgyswWaterData(
-                account=account,
-                bills=bills,
-                last_successful_fetch=datetime.now(timezone.utc),
-            )
-        except (ClientError, TimeoutError, ValueError) as err:
-            raise UpdateFailed(f"API error: {err}") from err
+        account_id = account.get("yhbh")
+        if not account_id:
+            raise UpdateFailed("No water account ID available")
+
+        bill_due = (
+            bill_fetched is None
+            or datetime.now(timezone.utc) - bill_fetched
+            >= timedelta(seconds=BILL_UPDATE_INTERVAL)
+        )
+        bill_succeeded = False
+        if bill_due:
+            try:
+                start, end = self._compute_month_range()
+                updated_bills = await self._fetch_bills(
+                    apid_raw, apid_encoded, account_id, start, end
+                )
+                bills = updated_bills
+                bill_fetched = datetime.now(timezone.utc)
+                bill_succeeded = True
+            except (ClientError, TimeoutError, ValueError, UpdateFailed) as err:
+                _LOGGER.warning(
+                    "Water bill refresh failed (%s); keeping previous bills for retry",
+                    type(err).__name__,
+                )
+                if account_error:
+                    raise UpdateFailed("Both water API refreshes failed") from err
+
+        # With no successful endpoint, keep the coordinator's previous snapshot.
+        if account_error and not bill_succeeded:
+            raise UpdateFailed("Water account refresh failed") from account_error
+
+        return FzgyswWaterData(
+            account=account,
+            bills=bills,
+            account_last_successful_fetch=account_fetched,
+            bill_last_successful_fetch=bill_fetched,
+        )
 
     async def _fetch_account_info(
         self, apid_encoded: str, apid_raw: str
