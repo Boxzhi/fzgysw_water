@@ -1,0 +1,46 @@
+name: Publish v0.2.3 Release (one time)
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-v0.2.3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'Boxzhi/fzgysw_water'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create v0.2.3 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.2.3 --repo Boxzhi/fzgysw_water >/dev/null 2>&1; then
+            echo "Release v0.2.3 already exists"
+            exit 0
+          fi
+          cat > /tmp/release-notes.md <<'RELEASE_NOTES'
+          ## v0.2.3 · 抚州公用水务
+          
+          ### 本次更新
+          - 将自动数据轮询周期由 **30 分钟**调整为 **6 小时**（21,600 秒）。
+          - 仍使用同一更新协调器，每轮依次查询账户余额和最近 12 个月账单；正常情况下每天约 **4 轮／8 次接口请求**（不含重启或手动刷新）。
+          - 同步更新 `manifest.json` 版本号及 `README.md` 的轮询说明。
+          
+          ### 兼容性
+          - 保留既有实体 ID、配置项、账单属性和 `last_successful_fetch` 最近成功抓取时间逻辑。
+          - 集成启动时仍会执行首次数据刷新；之后按协调器周期轮询。
+          
+          ### 升级
+          通过 HACS / Marketplace 更新至 **v0.2.3** 后重启 Home Assistant 即可；无需删除或重新添加原有水务账号。
+          RELEASE_NOTES
+          gh release create v0.2.3 \
+            --repo Boxzhi/fzgysw_water \
+            --target 35a1ebbb0d1eb08093a22f5e03d33010f4a8e65f \
+            --title "v0.2.3 · 抚州公用水务" \
+            --notes-file /tmp/release-notes.md \
+            --latest
