@@ -113,9 +113,16 @@ class FzgyswWaterBaseSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def _last_successful_fetch(self) -> str | None:
-        """UTC ISO 8601 timestamp shared by both sensor entities."""
+        """UTC ISO 8601 timestamp for this entity's own data source."""
         data = self.coordinator.data
-        return data.last_successful_fetch.isoformat() if data else None
+        if not data:
+            return None
+        fetched = (
+            data.account_last_successful_fetch
+            if self.entity_description.key == "balance"
+            else data.bill_last_successful_fetch
+        )
+        return fetched.isoformat() if fetched else None
 
 
 # =========================================================
