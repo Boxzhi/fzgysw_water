@@ -10,4 +10,4 @@ BASE_URL = "http://www.fzgysw.cn/weixincx/mnewmenu/ashx"
 ACCOUNT_ENDPOINT = "FrmZXJF.ashx"
 BILL_ENDPOINT = "FrmYscxMX.ashx"
 
-COORDINATOR_UPDATE_INTERVAL = 30 * 60
+COORDINATOR_UPDATE_INTERVAL = 6 * 60 * 60
