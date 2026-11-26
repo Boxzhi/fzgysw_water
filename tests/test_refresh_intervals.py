@@ -68,7 +68,7 @@ stub("homeassistant.components.sensor",
      SensorEntity=type("SensorEntity", (), {}),
      SensorEntityDescription=SensorEntityDescription)
 
-from fzgysw_water.const import BILL_UPDATE_INTERVAL, COORDINATOR_UPDATE_INTERVAL
+from fzgysw_water.const import ARREARS_UPDATE_INTERVAL, BILL_UPDATE_INTERVAL, COORDINATOR_UPDATE_INTERVAL
 from fzgysw_water.coordinator import FzgyswWaterDataCoordinator
 from fzgysw_water.sensor import (
     ACCOUNT_DESCRIPTION, BILL_DESCRIPTION,
@@ -150,8 +150,13 @@ class TestWaterRefresh(unittest.IsolatedAsyncioTestCase):
         coordinator.data = second
         coordinator._fetch_bills.side_effect = None
         third = await coordinator._async_update_data()
+        self.assertEqual(coordinator._fetch_bills.await_count, 2)
+        self.assertEqual(third.bill_last_successful_fetch, old_bill_time)
+        coordinator.data = third
+        coordinator._bill_retry_after = datetime.now(timezone.utc) - timedelta(seconds=1)
+        fourth = await coordinator._async_update_data()
         self.assertEqual(coordinator._fetch_bills.await_count, 3)
-        self.assertGreater(third.bill_last_successful_fetch, old_bill_time)
+        self.assertGreater(fourth.bill_last_successful_fetch, old_bill_time)
 
     async def test_balance_failure_does_not_block_due_bill(self):
         coordinator, _ = make_coordinator()
@@ -211,6 +216,31 @@ class TestWaterRefresh(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated.bills, [])
         self.assertIsNone(updated.bill_last_successful_fetch)
         self.assertEqual(coordinator._fetch_bills.await_count, 2)
+
+    async def test_dynamic_account_interval(self):
+        coordinator, _ = make_coordinator()
+        self.assertEqual(ARREARS_UPDATE_INTERVAL, 1800)
+        for raw, hours in [("0", 6), ("6.08", 0.5), (None, 0.5),
+                           ("unknown", 0.5), ("NaN", 0.5), ("inf", 0.5),
+                           (True, 0.5), ("0.00", 6), ("-1", 6)]:
+            with self.subTest(raw=raw):
+                coordinator._fetch_account_info.return_value = [
+                    {"yhbh": "001", "xyyc": "38.32", "yjje": raw}
+                ]
+                coordinator.data = await coordinator._async_update_data()
+                self.assertEqual(coordinator.update_interval, timedelta(hours=hours))
+        self.assertEqual(coordinator._fetch_bills.await_count, 1)
+
+    async def test_account_failure_retains_overdue_interval(self):
+        coordinator, _ = make_coordinator()
+        coordinator._fetch_account_info.return_value = [
+            {"yhbh": "001", "xyyc": "38.32", "yjje": "6.08"}
+        ]
+        coordinator.data = await coordinator._async_update_data()
+        coordinator._fetch_account_info.side_effect = TimeoutError()
+        with self.assertRaises(UpdateFailed):
+            await coordinator._async_update_data()
+        self.assertEqual(coordinator.update_interval, timedelta(minutes=30))
 
 
 if __name__ == "__main__":
