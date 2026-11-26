@@ -1,0 +1,37 @@
+name: Publish v0.2.8
+on:
+  push:
+    branches:
+      - release/v0.2.8
+    paths:
+      - .github/workflows/publish-v0.2.8.yml
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 72a2c33e9bd9901027c5980d48da89d212bccced
+      - name: Verify passing validation and version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/Boxzhi/fzgysw_water/actions/runs/45748229766 --jq '.conclusion + " " + .head_sha' | grep -Fx 'success 72a2c33e9bd9901027c5980d48da89d212bccced'
+          python3 -m unittest discover -s tests -v
+          python3 -m compileall -q custom_components/fzgysw_water
+          python3 -c 'import json; assert json.load(open("custom_components/fzgysw_water/manifest.json"))["version"] == "0.2.8"'
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.8 --repo Boxzhi/fzgysw_water --target 72a2c33e9bd9901027c5980d48da89d212bccced --title v0.2.8 --latest --notes '### 品牌图标恢复
+
+          - 恢复历史版本的抚州水务原始 Logo，保留图形、文字和配色。
+          - 原始 640×640 PNG 等比例适配为 256×256 和 512×512 品牌图标。
+          - 除品牌图标与版本号外，不变更业务逻辑、实体 ID 或配置。
+          - HACS、Hassfest 及 Python 回归测试全部通过。
+
+          [验证记录](https://github.com/Boxzhi/fzgysw_water/actions/runs/45748229766)'
