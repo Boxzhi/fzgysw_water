@@ -1,0 +1,37 @@
+name: Publish v0.2.7
+on:
+  push:
+    branches:
+      - release/v0.2.7
+    paths:
+      - .github/workflows/publish-v0.2.7.yml
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: deead245a110743b1394acadf5ddec61b1c7d9e0
+      - name: Verify passing validation and version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/Boxzhi/fzgysw_water/actions/runs/45746740002 --jq '.conclusion + " " + .head_sha' | grep -Fx 'success deead245a110743b1394acadf5ddec61b1c7d9e0'
+          python3 -m unittest discover -s tests -v
+          python3 -m compileall -q custom_components/fzgysw_water
+          python3 -c 'import json; assert json.load(open("custom_components/fzgysw_water/manifest.json"))["version"] == "0.2.7"'
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.7 --repo Boxzhi/fzgysw_water --target deead245a110743b1394acadf5ddec61b1c7d9e0 --title v0.2.7 --latest --notes '### Marketplace 上架准备
+
+          - 新增集成图标、中英文翻译及 Marketplace 分类。
+          - 完善 HACS 元数据、README 和 MIT 开源许可证。
+          - HACS 10 项检查、Hassfest 及 15 项回归测试全部通过。
+          - 保持 v0.2.6 的业务逻辑、实体 ID 及配置兼容。
+          
+          [验证记录](https://github.com/Boxzhi/fzgysw_water/actions/runs/45746740002)'
