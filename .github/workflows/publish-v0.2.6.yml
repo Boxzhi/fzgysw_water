@@ -1,0 +1,31 @@
+name: Test and publish v0.2.6
+on:
+  push:
+    branches:
+      - release/v0.2.6
+    paths:
+      - .github/workflows/publish-v0.2.6.yml
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e31900214a812175f85e490aa45ba97fb9d59ff5
+      - name: Run regression tests and verify version
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 -m compileall -q custom_components/fzgysw_water
+          python3 -c 'import json; assert json.load(open("custom_components/fzgysw_water/manifest.json"))["version"] == "0.2.6"'
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.6 --repo Boxzhi/fzgysw_water --target e31900214a812175f85e490aa45ba97fb9d59ff5 --title v0.2.6 --latest --notes '### 更新说明
+
+          - 新增刷新数据按钮，手动强制更新账户信息及历史账单。
+          - 后端手动刷新互斥，全部成功冷却 60 秒，部分或全部失败冷却 10 秒。
+          - 自动轮询继续沿用无欠费 6 小时、欠费 30 分钟、账单至少 12 小时。
+          - 保留原有实体 ID 和账户配置。升级后重启 Home Assistant。'
