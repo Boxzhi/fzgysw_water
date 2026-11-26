@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 import unittest
@@ -9,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"))
 
@@ -29,6 +30,14 @@ class DataUpdateCoordinator:
     def __init__(self, *args, **kwargs):
         self.data = None
         self.update_interval = kwargs["update_interval"]
+        self._refresh_lock = asyncio.Lock()
+
+    async def async_refresh(self):
+        async with self._refresh_lock:
+            try:
+                self.data = await self._async_update_data()
+            except UpdateFailed:
+                pass
 
     @classmethod
     def __class_getitem__(cls, item):
@@ -55,6 +64,7 @@ stub("aiohttp", ClientError=type("ClientError", (Exception,), {}))
 stub("homeassistant")
 stub("homeassistant.config_entries", ConfigEntry=object)
 stub("homeassistant.core", HomeAssistant=object)
+stub("homeassistant.exceptions", HomeAssistantError=type("HomeAssistantError", (Exception,), {}))
 stub("homeassistant.helpers")
 stub("homeassistant.helpers.aiohttp_client", async_get_clientsession=lambda hass: None)
 stub("homeassistant.helpers.update_coordinator",
@@ -64,12 +74,14 @@ stub("homeassistant.helpers.update_coordinator",
 stub("homeassistant.helpers.entity", DeviceInfo=dict)
 stub("homeassistant.helpers.entity_platform", AddEntitiesCallback=object)
 stub("homeassistant.components")
+stub("homeassistant.components.button", ButtonEntity=type("ButtonEntity", (), {}))
 stub("homeassistant.components.sensor",
      SensorEntity=type("SensorEntity", (), {}),
      SensorEntityDescription=SensorEntityDescription)
 
 from fzgysw_water.const import ARREARS_UPDATE_INTERVAL, BILL_UPDATE_INTERVAL, COORDINATOR_UPDATE_INTERVAL
-from fzgysw_water.coordinator import FzgyswWaterDataCoordinator
+from fzgysw_water.coordinator import FzgyswWaterDataCoordinator, HomeAssistantError
+from fzgysw_water.button import FzgyswWaterRefreshButton
 from fzgysw_water.sensor import (
     ACCOUNT_DESCRIPTION, BILL_DESCRIPTION,
     FzgyswWaterAccountSensor, FzgyswWaterBillSensor,
@@ -241,6 +253,112 @@ class TestWaterRefresh(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(UpdateFailed):
             await coordinator._async_update_data()
         self.assertEqual(coordinator.update_interval, timedelta(minutes=30))
+
+    async def test_manual_forces_both_and_resets_interval(self):
+        coordinator, entry = make_coordinator()
+        coordinator.data = await coordinator._async_update_data()
+        before = coordinator.data
+        coordinator._bill_retry_after = datetime.now(timezone.utc) + timedelta(hours=6)
+        coordinator._fetch_account_info.return_value = [
+            {"yhbh": "001", "xyyc": "38.32", "yjje": "6.08"}
+        ]
+        button = FzgyswWaterRefreshButton(coordinator, entry)
+        self.assertEqual(button.entity_id, "button.fuzhou_water_001_refresh")
+        await button.async_press()
+        self.assertEqual(coordinator._fetch_account_info.await_count, 2)
+        self.assertEqual(coordinator._fetch_bills.await_count, 2)
+        self.assertEqual(coordinator.update_interval, timedelta(minutes=30))
+        self.assertGreaterEqual(coordinator.data.account_last_successful_fetch, before.account_last_successful_fetch)
+        self.assertGreaterEqual(coordinator.data.bill_last_successful_fetch, before.bill_last_successful_fetch)
+        self.assertIsNone(coordinator._bill_retry_after)
+        with self.assertRaises(HomeAssistantError):
+            await button.async_press()
+        self.assertEqual(coordinator._fetch_bills.await_count, 2)
+        coordinator._manual_refresh_until = 0
+        coordinator._fetch_account_info.return_value = [
+            {"yhbh": "001", "xyyc": "93.92", "yjje": "-93.92"}
+        ]
+        await button.async_press()
+        self.assertEqual(coordinator.update_interval, timedelta(hours=6))
+        coordinator.data = await coordinator._async_update_data()
+        self.assertEqual(coordinator._fetch_bills.await_count, 3)
+
+    async def test_manual_partial_failure_preserves_cache_and_short_cooldown(self):
+        coordinator, _ = make_coordinator()
+        coordinator.data = await coordinator._async_update_data()
+        before = coordinator.data
+        coordinator._fetch_bills.side_effect = UpdateFailed()
+        with patch("fzgysw_water.coordinator.monotonic", return_value=100):
+            with self.assertRaises(HomeAssistantError):
+                await coordinator.async_refresh_all()
+        self.assertEqual(coordinator._manual_refresh_until, 110)
+        self.assertEqual(coordinator.data.bill_last_successful_fetch, before.bill_last_successful_fetch)
+        self.assertGreaterEqual(coordinator.data.account_last_successful_fetch, before.account_last_successful_fetch)
+        self.assertFalse(coordinator._manual_pending)
+
+    async def test_manual_account_failure_still_fetches_bills(self):
+        coordinator, _ = make_coordinator()
+        coordinator.data = await coordinator._async_update_data()
+        before = coordinator.data
+        coordinator._fetch_account_info.side_effect = TimeoutError()
+        with self.assertRaises(HomeAssistantError):
+            await coordinator.async_refresh_all()
+        self.assertEqual(coordinator._fetch_bills.await_count, 2)
+        self.assertEqual(coordinator.data.account_last_successful_fetch, before.account_last_successful_fetch)
+        self.assertGreaterEqual(coordinator.data.bill_last_successful_fetch, before.bill_last_successful_fetch)
+
+    async def test_manual_both_fail_and_cooldown(self):
+        coordinator, _ = make_coordinator()
+        coordinator.data = await coordinator._async_update_data()
+        before = coordinator.data
+        coordinator._fetch_account_info.side_effect = TimeoutError()
+        coordinator._fetch_bills.side_effect = UpdateFailed()
+        with patch("fzgysw_water.coordinator.monotonic", return_value=100):
+            with self.assertRaises(HomeAssistantError):
+                await coordinator.async_refresh_all()
+            with self.assertRaises(HomeAssistantError):
+                await coordinator.async_refresh_all()
+        self.assertIs(coordinator.data, before)
+        self.assertEqual(coordinator._fetch_bills.await_count, 2)
+        self.assertEqual(coordinator._manual_refresh_until, 110)
+
+    async def test_concurrent_manual_refresh_and_success_cooldown(self):
+        coordinator, _ = make_coordinator()
+        coordinator.data = await coordinator._async_update_data()
+        entered, proceed = asyncio.Event(), asyncio.Event()
+        async def slow(*args):
+            entered.set()
+            await proceed.wait()
+            return [{"yhbh": "001", "xyyc": "93.92", "yjje": "-93.92"}]
+        coordinator._fetch_account_info.side_effect = slow
+        with patch("fzgysw_water.coordinator.monotonic", return_value=100):
+            running = asyncio.create_task(coordinator.async_refresh_all())
+            await entered.wait()
+            try:
+                with self.assertRaises(HomeAssistantError):
+                    await coordinator.async_refresh_all()
+            finally:
+                proceed.set()
+            await running
+            self.assertEqual(coordinator._manual_refresh_until, 160)
+            with self.assertRaises(HomeAssistantError):
+                await coordinator.async_refresh_all()
+        self.assertEqual(coordinator._fetch_bills.await_count, 2)
+
+    async def test_scheduled_task_does_not_consume_manual_intent(self):
+        coordinator, _ = make_coordinator()
+        coordinator.data = await coordinator._async_update_data()
+        await coordinator._refresh_lock.acquire()
+        manual = asyncio.create_task(coordinator.async_refresh_all())
+        await asyncio.sleep(0)
+        try:
+            self.assertTrue(coordinator._manual_pending)
+            coordinator.data = await coordinator._async_update_data()
+            self.assertEqual(coordinator._fetch_bills.await_count, 1)
+        finally:
+            coordinator._refresh_lock.release()
+        await manual
+        self.assertEqual(coordinator._fetch_bills.await_count, 2)
 
 
 if __name__ == "__main__":

@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import base64
 import json
 import logging
 import math
+from time import monotonic
 from typing import Any
 
 from aiohttp import ClientError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -26,6 +29,8 @@ from .const import (
     CONF_ACCOUNT_ID,
     CONF_APID,
     DOMAIN,
+    MANUAL_REFRESH_FAILURE_COOLDOWN,
+    MANUAL_REFRESH_SUCCESS_COOLDOWN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,6 +60,10 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
         self._entry = entry
         self._session = async_get_clientsession(hass)
         self._bill_retry_after: datetime | None = None
+        self._manual_pending = False
+        self._manual_task: asyncio.Task | None = None
+        self._manual_result: dict[str, bool] | None = None
+        self._manual_refresh_until = 0.0
 
     def _update_account_interval(self, account: dict[str, Any]) -> None:
         """Use the raw amount due (yjje / arrears) to adjust polling."""
@@ -73,8 +82,32 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
         if self.update_interval != interval:
             self.update_interval = interval
 
+    async def async_refresh_all(self) -> None:
+        """Force both endpoints and reset HA polling using the normal coordinator path."""
+        if self._manual_pending or monotonic() < self._manual_refresh_until:
+            raise HomeAssistantError("Water refresh is already running or cooling down")
+        self._manual_pending = True
+        result = {"account": False, "bill": False}
+        self._manual_task = asyncio.current_task()
+        self._manual_result = result
+        succeeded = False
+        try:
+            await self.async_refresh()
+            succeeded = result["account"] and result["bill"]
+            if not succeeded:
+                raise HomeAssistantError("Water refresh incomplete; cached data retained for failed endpoints")
+        finally:
+            self._manual_task = None
+            self._manual_result = None
+            self._manual_refresh_until = monotonic() + (
+                MANUAL_REFRESH_SUCCESS_COOLDOWN if succeeded else MANUAL_REFRESH_FAILURE_COOLDOWN
+            )
+            self._manual_pending = False
+
     async def _async_update_data(self) -> FzgyswWaterData:
-        """Refresh account dynamically; keep bills on their own cadence."""
+        """Refresh account dynamically; force bills only for the manual action."""
+        # Only the task executing async_refresh_all may bypass bill timing.
+        manual = self._manual_result if asyncio.current_task() is self._manual_task else None
         apid_input = self._entry.data[CONF_APID]
         apid_raw, apid_encoded = self._derive_apid_pair(apid_input)
         configured_id = self._entry.data.get(CONF_ACCOUNT_ID)
@@ -107,6 +140,8 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             account = updated_account
             account_fetched = datetime.now(timezone.utc)
             self._update_account_interval(updated_account)
+            if manual is not None:
+                manual["account"] = True
         except (ClientError, TimeoutError, ValueError, UpdateFailed) as err:
             account_error = err
             if not account:
@@ -121,7 +156,7 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
             raise UpdateFailed("No water account ID available")
 
         now = datetime.now(timezone.utc)
-        bill_due = (
+        bill_due = manual is not None or (
             (bill_fetched is None
              or now - bill_fetched >= timedelta(seconds=BILL_UPDATE_INTERVAL))
             and (self._bill_retry_after is None or now >= self._bill_retry_after)
@@ -137,6 +172,8 @@ class FzgyswWaterDataCoordinator(DataUpdateCoordinator[FzgyswWaterData]):
                 bill_fetched = datetime.now(timezone.utc)
                 bill_succeeded = True
                 self._bill_retry_after = None
+                if manual is not None:
+                    manual["bill"] = True
             except (ClientError, TimeoutError, ValueError, UpdateFailed) as err:
                 # Do not retry bills every 30 minutes while the account is overdue.
                 self._bill_retry_after = datetime.now(timezone.utc) + timedelta(
