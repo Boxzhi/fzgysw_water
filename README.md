@@ -2,9 +2,15 @@
 
 通过抚州公用水务微信公众号相关接口，向 Home Assistant 提供水费账户余额、用水账单及历史账单信息。支持通过 **HACS / Home Assistant Marketplace** 安装，也可手动安装。
 
-- 当前版本：**v0.2.6**
+- 当前版本：**v0.2.7**
 - [正式版本与更新记录（Releases）](https://github.com/Boxzhi/fzgysw_water/releases)
 - [问题反馈（Issues）](https://github.com/Boxzhi/fzgysw_water/issues)
+
+<!-- marketplace:hide -->
+[![Open this repository in Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Boxzhi&repository=fzgysw_water&category=integration)
+<!-- marketplace:show -->
+
+本项目为非官方社区集成，与抚州公用水务有限公司及 Home Assistant 官方无隶属关系。仅用于查询本人有权访问的账户数据；不执行缴费。当前上游接口使用 HTTP，请勿公开 APID 或账户数据。
 
 ## 主要功能
 

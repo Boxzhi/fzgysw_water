@@ -12,6 +12,9 @@
     },
     "error": {
       "invalid_auth": "需要填写有效的 APID。"
+    },
+    "abort": {
+      "already_configured": "此账户已配置。"
     }
   }
 }
