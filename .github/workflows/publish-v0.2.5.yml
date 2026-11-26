@@ -1,0 +1,32 @@
+name: Publish v0.2.5
+on:
+  push:
+    branches:
+      - release/v0.2.5
+    paths:
+      - .github/workflows/publish-v0.2.5.yml
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f41814681ac27630f485e2b4033153fbc0ed7640
+      - name: Run regression tests and verify version
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 -m compileall -q custom_components/fzgysw_water
+          python3 -c 'import json; assert json.load(open("custom_components/fzgysw_water/manifest.json"))["version"] == "0.2.5"'
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.5 --repo Boxzhi/fzgysw_water --target f41814681ac27630f485e2b4033153fbc0ed7640 --title v0.2.5 --latest --notes '### 更新说明
+
+          - 无欠费时每 6 小时抓取账户信息，欠费时每 30 分钟抓取。
+          - 欠费清除后自动恢复 6 小时轮询。
+          - 欠费字段异常或接口请求失败时沿用上次有效周期。
+          - 历史账单保持至少 12 小时更新间隔，失败后至少等待 6 小时重试。
+          - 保留原有实体 ID、属性及账户配置。升级后重启 Home Assistant 即可。'
