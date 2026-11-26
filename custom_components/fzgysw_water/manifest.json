@@ -1,6 +1,10 @@
 {
   "domain": "fzgysw_water",
   "name": "抚州公用水务",
+  "categories": [
+    "water",
+    "local_services"
+  ],
   "codeowners": [
     "@Boxzhi"
   ],
